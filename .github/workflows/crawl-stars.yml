@@ -1,4 +1,4 @@
-name: Test23-Github-Crawler
+name: Github-Crawler
 
 on:
   push:
@@ -238,28 +238,5 @@ jobs:
           crawl_summary.json
         retention-days: 30
     
-    # Optional: Create release on main branch
-    - name: Create release
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: crawl-${{ github.run_number }}
-        release_name: Repository Crawl ${{ github.run_number }}
-        body: |
-          Automated GitHub repository star crawl completed.
-          
-          This release contains data for repositories crawled on ${{ github.run_id }}.
-          
-          **Files included:**
-          - `repositories.csv` - Repository data in CSV format
-          - `repositories.json` - Repository data in JSON format  
-          - `crawl_summary.json` - Crawl statistics and metadata
-          
-          **Usage:**
-          Download the artifacts to access the crawled repository data.
-        draft: false
-        prerelease: false
   
   # Performance testing with Aiven is done in the main job
