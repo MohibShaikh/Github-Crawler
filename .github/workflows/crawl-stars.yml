@@ -1,0 +1,265 @@
+name: Test23-Github-Crawler
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      target_count:
+        description: 'Number of repositories to crawl'
+        required: false
+        default: '100000'
+        type: string
+
+jobs:
+  crawl-stars:
+    runs-on: ubuntu-latest
+
+    
+    env:
+      DATABASE_URL: postgres://avnadmin:AVNS_L3b2cy8KY3DXnPGFtzm@crawler-cloud-392a.j.aivencloud.com:25618/defaultdb?sslmode=require
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PYTHONPATH: ${{ github.workspace }}
+    
+    steps:
+    # Step 1 & 2: Setup and dependency installation
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        echo "📦 Installing Python dependencies..."
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        echo "✅ Dependencies installed successfully"
+    
+    - name: Verify Aiven PostgreSQL connection
+      run: |
+        python -c "
+        import asyncpg
+        import asyncio
+        async def test():
+            try:
+                print('🔗 Connecting to Aiven PostgreSQL...')
+                conn = await asyncpg.connect('${{ env.DATABASE_URL }}')
+                version = await conn.fetchval('SELECT version()')
+                print(f'✅ Connected! PostgreSQL version: {version}')
+                
+                # Test basic query
+                current_time = await conn.fetchval('SELECT NOW()')
+                print(f'✅ Database time: {current_time}')
+                
+                await conn.close()
+                print('✅ Aiven PostgreSQL connection verified')
+            except Exception as e:
+                print(f'❌ Connection failed: {e}')
+                raise
+        asyncio.run(test())
+        "
+    
+    # Step 3: Setup Aiven PostgreSQL schema (creates all tables and schemas)
+    - name: setup-postgres
+      run: |
+        echo "🗄️ Setting up Aiven PostgreSQL database schema..."
+        python -c "
+        import asyncio
+        import asyncpg
+        import sys
+        from pathlib import Path
+        
+        async def setup_aiven_database():
+            try:
+                print('🔗 Connecting to Aiven PostgreSQL for schema setup...')
+                
+                # Connect directly to Aiven database
+                conn = await asyncpg.connect('${{ env.DATABASE_URL }}')
+                
+                # Read and execute migration
+                migration_path = Path('migrations/001_initial_schema.sql')
+                if migration_path.exists():
+                    migration_sql = migration_path.read_text()
+                    print('📋 Executing database migration...')
+                    await conn.execute(migration_sql)
+                    print('✅ Database schema migration completed')
+                else:
+                    print('❌ Migration file not found')
+                    sys.exit(1)
+                
+                await conn.close()
+                print('✅ Aiven database setup completed successfully')
+                
+            except Exception as e:
+                print(f'❌ Aiven database setup failed: {e}')
+                import traceback
+                traceback.print_exc()
+                sys.exit(1)
+        
+        asyncio.run(setup_aiven_database())
+        "
+    
+    - name: Verify database setup
+      run: |
+        python -c "
+        import asyncpg
+        import asyncio
+        async def test():
+            conn = await asyncpg.connect('${{ env.DATABASE_URL }}')
+            tables = await conn.fetch(\"\"\"
+                SELECT table_name FROM information_schema.tables 
+                WHERE table_schema = 'public'
+            \"\"\")
+            print('Created tables:', [row['table_name'] for row in tables])
+            await conn.close()
+        asyncio.run(test())
+        "
+    
+    # Step 4: Crawl GitHub repositories (obtain 100,000 GitHub repositories and star counts)
+    - name: crawl-stars
+      run: |
+        TARGET_COUNT=${{ github.event.inputs.target_count || '100000' }}
+        echo "🕷️ Starting crawl-stars step: obtaining $TARGET_COUNT GitHub repositories with star counts..."
+        python ci_crawler.py
+        echo "✅ crawl-stars step completed successfully"
+      timeout-minutes: 120
+      env:
+        TARGET_REPOSITORIES: ${{ github.event.inputs.target_count || '100000' }}
+    
+    - name: Health check
+      run: |
+        python -m src.main health-check
+    
+    # Step 5: Export and upload results (dump database contents as artifacts)
+    - name: Dump database contents to CSV
+      run: |
+        echo "📤 Exporting database contents to CSV format..."
+        python -c "
+        import asyncio
+        from src.infrastructure.database import DatabasePool, PostgreSQLDatabaseRepository
+        from src.application.use_cases import ExportDataUseCase
+        
+        async def export():
+            db_pool = DatabasePool('${{ env.DATABASE_URL }}')
+            await db_pool.initialize()
+            database_repo = PostgreSQLDatabaseRepository(db_pool)
+            use_case = ExportDataUseCase(database_repo)
+            await use_case.export_repositories_csv('repositories.csv')
+            await db_pool.close()
+            print('✅ CSV export completed')
+        
+        asyncio.run(export())
+        "
+    
+    - name: Dump database contents to JSON  
+      run: |
+        echo "📤 Exporting database contents to JSON format..."
+        python -c "
+        import asyncio
+        from src.infrastructure.database import DatabasePool, PostgreSQLDatabaseRepository
+        from src.application.use_cases import ExportDataUseCase
+        
+        async def export():
+            db_pool = DatabasePool('${{ env.DATABASE_URL }}')
+            await db_pool.initialize()
+            database_repo = PostgreSQLDatabaseRepository(db_pool)
+            use_case = ExportDataUseCase(database_repo)
+            await use_case.export_repositories_json('repositories.json')
+            await db_pool.close()
+            print('✅ JSON export completed')
+        
+        asyncio.run(export())
+        "
+    
+    - name: Generate summary statistics
+      run: |
+        python -c "
+        import asyncio
+        import json
+        import sys
+        sys.path.append('${{ github.workspace }}')
+        
+        from src.infrastructure.database import DatabasePool, PostgreSQLDatabaseRepository
+        from src.application.use_cases import ExportDataUseCase
+        
+        async def generate_summary():
+            pool = DatabasePool('${{ env.DATABASE_URL }}')
+            await pool.initialize()
+            try:
+                database_repo = PostgreSQLDatabaseRepository(pool)
+                use_case = ExportDataUseCase(database_repo)
+                summary = await use_case.get_crawl_summary()
+                
+                with open('crawl_summary.json', 'w') as f:
+                    json.dump(summary, f, indent=2)
+                
+                print('=== CRAWL SUMMARY ===')
+                print(json.dumps(summary, indent=2))
+                
+            finally:
+                await pool.close()
+        
+        asyncio.run(generate_summary())
+        "
+    
+    - name: Compress export files
+      run: |
+        tar -czf github-repositories-data.tar.gz repositories.csv repositories.json crawl_summary.json
+        
+        # Display file sizes
+        echo "=== FILE SIZES ==="
+        ls -lh repositories.csv repositories.json crawl_summary.json github-repositories-data.tar.gz
+        
+        # Display top 10 repositories by stars
+        echo "=== TOP 10 REPOSITORIES BY STARS ==="
+        head -n 11 repositories.csv | tail -n 10 | sort -t',' -k6 -nr | head -n 10 || echo "No data available"
+    
+    # Upload artifacts
+    - name: Upload repository data as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: github-repositories-data
+        path: github-repositories-data.tar.gz
+        retention-days: 30
+    
+    - name: Upload individual files as artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: github-repositories-files
+        path: |
+          repositories.csv
+          repositories.json
+          crawl_summary.json
+        retention-days: 30
+    
+    # Optional: Create release on main branch
+    - name: Create release
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: crawl-${{ github.run_number }}
+        release_name: Repository Crawl ${{ github.run_number }}
+        body: |
+          Automated GitHub repository star crawl completed.
+          
+          This release contains data for repositories crawled on ${{ github.run_id }}.
+          
+          **Files included:**
+          - `repositories.csv` - Repository data in CSV format
+          - `repositories.json` - Repository data in JSON format  
+          - `crawl_summary.json` - Crawl statistics and metadata
+          
+          **Usage:**
+          Download the artifacts to access the crawled repository data.
+        draft: false
+        prerelease: false
+  
+  # Performance testing with Aiven is done in the main job
