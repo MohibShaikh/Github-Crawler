@@ -202,7 +202,7 @@ class GitHubRepositoryCrawler:
     
     def __init__(self, client: GitHubGraphQLClient, batch_size: int = 100):
         self.client = client
-        self.batch_size = min(batch_size, 100)  # GitHub max is 100
+        self.batch_size = min(batch_size, 100)  # GitHub max is 100 for search API
         
         # Ultra-fast search queries - focus on getting maximum unique repos quickly
         self.search_queries = [
@@ -213,6 +213,23 @@ class GitHubRepositoryCrawler:
             "is:public stars:50..99",
             "is:public stars:10..49",
             "is:public stars:1..9",
+            
+            # More granular star ranges for better coverage
+            "is:public stars:2000..4999",
+            "is:public stars:1000..1999",
+            "is:public stars:750..999",
+            "is:public stars:600..749",
+            "is:public stars:400..599",
+            "is:public stars:300..399",
+            "is:public stars:200..299",
+            "is:public stars:150..199",
+            "is:public stars:75..99",
+            "is:public stars:25..49",
+            "is:public stars:15..24",
+            "is:public stars:5..14",
+            "is:public stars:2..4",
+            "is:public stars:1",
+            
             # Popular languages with star ranges
             "is:public language:javascript stars:100..999",
             "is:public language:python stars:100..999",
@@ -227,18 +244,50 @@ class GitHubRepositoryCrawler:
             "is:public language:csharp stars:100..999",
             "is:public language:swift stars:100..999",
             "is:public language:kotlin stars:100..999",
+            
+            # More language-specific queries
+            "is:public language:javascript stars:50..99",
+            "is:public language:python stars:50..99",
+            "is:public language:java stars:50..99",
+            "is:public language:go stars:50..99",
+            "is:public language:rust stars:50..99",
+            "is:public language:typescript stars:50..99",
+            "is:public language:php stars:50..99",
+            "is:public language:ruby stars:50..99",
+            "is:public language:cpp stars:50..99",
+            "is:public language:c stars:50..99",
+            "is:public language:csharp stars:50..99",
+            "is:public language:swift stars:50..99",
+            "is:public language:kotlin stars:50..99",
+            
             # Recent repositories
             "is:public created:>2024-01-01 stars:>10",
             "is:public created:>2023-01-01 stars:>10",
             "is:public created:>2022-01-01 stars:>10",
             "is:public created:>2021-01-01 stars:>10",
             "is:public created:>2020-01-01 stars:>10",
+            
+            # More recent date ranges
+            "is:public created:2024-01-01..2024-12-31 stars:>5",
+            "is:public created:2023-01-01..2023-12-31 stars:>5",
+            "is:public created:2022-01-01..2022-12-31 stars:>5",
+            "is:public created:2021-01-01..2021-12-31 stars:>5",
+            "is:public created:2020-01-01..2020-12-31 stars:>5",
+            
             # Active repositories
             "is:public pushed:>2024-01-01 stars:>10",
             "is:public pushed:>2023-01-01 stars:>10",
             "is:public pushed:>2022-01-01 stars:>10",
             "is:public pushed:>2021-01-01 stars:>10",
             "is:public pushed:>2020-01-01 stars:>10",
+            
+            # More push date ranges
+            "is:public pushed:2024-01-01..2024-12-31 stars:>5",
+            "is:public pushed:2023-01-01..2023-12-31 stars:>5",
+            "is:public pushed:2022-01-01..2022-12-31 stars:>5",
+            "is:public pushed:2021-01-01..2021-12-31 stars:>5",
+            "is:public pushed:2020-01-01..2020-12-31 stars:>5",
+            
             # Popular topics
             "is:public topic:web stars:>10",
             "is:public topic:api stars:>10",
@@ -250,12 +299,86 @@ class GitHubRepositoryCrawler:
             "is:public topic:security stars:>10",
             "is:public topic:ai stars:>10",
             "is:public topic:machine-learning stars:>10",
+            
+            # More topics
+            "is:public topic:react stars:>5",
+            "is:public topic:vue stars:>5",
+            "is:public topic:angular stars:>5",
+            "is:public topic:nodejs stars:>5",
+            "is:public topic:docker stars:>5",
+            "is:public topic:kubernetes stars:>5",
+            "is:public topic:aws stars:>5",
+            "is:public topic:azure stars:>5",
+            "is:public topic:gcp stars:>5",
+            "is:public topic:blockchain stars:>5",
+            "is:public topic:cryptocurrency stars:>5",
+            "is:public topic:game stars:>5",
+            "is:public topic:mobile stars:>5",
+            "is:public topic:ios stars:>5",
+            "is:public topic:android stars:>5",
+            "is:public topic:linux stars:>5",
+            "is:public topic:windows stars:>5",
+            "is:public topic:macos stars:>5",
+            
             # Large repositories
             "is:public size:>1000 stars:>1",
             "is:public size:100..999 stars:>1",
+            "is:public size:50..99 stars:>1",
+            "is:public size:10..49 stars:>1",
+            
             # Forked repositories
             "is:public forks:>100 stars:>1",
-            "is:public forks:10..99 stars:>1"
+            "is:public forks:10..99 stars:>1",
+            "is:public forks:1..9 stars:>1",
+            
+            # Repository types
+            "is:public is:template stars:>1",
+            "is:public is:mirror stars:>1",
+            "is:public archived:false stars:>1",
+            
+            # License-based searches
+            "is:public license:mit stars:>5",
+            "is:public license:apache-2.0 stars:>5",
+            "is:public license:gpl-3.0 stars:>5",
+            "is:public license:bsd-3-clause stars:>5",
+            "is:public license:isc stars:>5",
+            
+            # User-based searches (popular developers)
+            "is:public user:facebook stars:>1",
+            "is:public user:google stars:>1",
+            "is:public user:microsoft stars:>1",
+            "is:public user:apple stars:>1",
+            "is:public user:netflix stars:>1",
+            "is:public user:uber stars:>1",
+            "is:public user:airbnb stars:>1",
+            "is:public user:spotify stars:>1",
+            "is:public user:twitter stars:>1",
+            "is:public user:github stars:>1",
+            
+            # Organization-based searches
+            "is:public org:mozilla stars:>1",
+            "is:public org:apache stars:>1",
+            "is:public org:kubernetes stars:>1",
+            "is:public org:docker stars:>1",
+            "is:public org:hashicorp stars:>1",
+            "is:public org:elastic stars:>1",
+            "is:public org:grafana stars:>1",
+            "is:public org:prometheus stars:>1",
+            "is:public org:jenkinsci stars:>1",
+            "is:public org:spring-projects stars:>1",
+            
+            # Description-based searches
+            "is:public \"awesome\" stars:>5",
+            "is:public \"starter\" stars:>5",
+            "is:public \"template\" stars:>5",
+            "is:public \"boilerplate\" stars:>5",
+            "is:public \"example\" stars:>5",
+            "is:public \"demo\" stars:>5",
+            "is:public \"tutorial\" stars:>5",
+            "is:public \"guide\" stars:>5",
+            
+            # Fallback: any public repo with stars
+            "is:public stars:>0"
         ]
         self.current_query_index = 0
         self.seen_repo_ids = set()  # Track seen repository IDs to avoid duplicates
@@ -328,7 +451,9 @@ class GitHubRepositoryCrawler:
                            repository_count=repository_count,
                            nodes_count=len(repositories_data),
                            has_next_page=page_info["hasNextPage"],
-                           end_cursor=page_info["endCursor"])
+                           end_cursor=page_info["endCursor"],
+                           query=self.search_queries[self.current_query_index],
+                           query_index=self.current_query_index)
                 
                 # Convert to domain entities and filter for repositories with stars
                 repositories = []
@@ -361,7 +486,7 @@ class GitHubRepositoryCrawler:
                                  consecutive_empty=self.consecutive_empty_batches)
                     
                     # Skip to next query if we've had too many consecutive empty batches
-                    if self.consecutive_empty_batches >= 3:  # More aggressive skipping
+                    if self.consecutive_empty_batches >= 5:  # Less aggressive skipping - wait longer
                         logger.info("Too many consecutive empty batches, skipping to next query")
                         self.current_query_index += 1
                         self.consecutive_empty_batches = 0
@@ -375,7 +500,27 @@ class GitHubRepositoryCrawler:
                             logger.info("All search queries exhausted", 
                                        total_queries_used=len(self.search_queries),
                                        total_fetched=total_fetched)
-                            break
+                            
+                            # Fallback: if we haven't reached target, try broader queries
+                            if total_fetched < target_count * 0.8:  # If we got less than 80% of target
+                                logger.warning("Didn't reach target count, trying broader fallback queries")
+                                # Add some very broad fallback queries
+                                fallback_queries = [
+                                    "is:public stars:>0",
+                                    "is:public created:>2010-01-01",
+                                    "is:public pushed:>2020-01-01",
+                                    "is:public language:javascript",
+                                    "is:public language:python",
+                                    "is:public language:java",
+                                    "is:public language:go",
+                                    "is:public language:rust"
+                                ]
+                                self.search_queries.extend(fallback_queries)
+                                self.current_query_index = len(self.search_queries) - len(fallback_queries)
+                                cursor = None
+                                continue
+                            else:
+                                break
                 else:
                     # Reset counter when we get new repositories
                     self.consecutive_empty_batches = 0
