@@ -553,7 +553,7 @@ class GitHubRepositoryCrawler:
                                        total_fetched=total_fetched)
                             
                             # Fallback: if we haven't reached target, try broader queries
-                            if total_fetched < target_count * 0.8:  # If we got less than 80% of target
+                            if total_fetched < target_count:  # Keep going until we hit full target
                                 logger.warning("Didn't reach target count, trying broader fallback queries")
                                 # Add some very broad fallback queries
                                 fallback_queries = [
