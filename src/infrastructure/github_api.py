@@ -187,39 +187,15 @@ class GitHubRepositoryCrawler:
         }
         nodes {
           ... on Repository {
-            id
             databaseId
             name
             nameWithOwner
-            owner {
-              login
-              __typename
-            }
+            owner { login __typename }
             stargazerCount
-            forkCount
-            watchers {
-              totalCount
-            }
-            primaryLanguage {
-              name
-            }
-            description
-            isPrivate
-            isFork
-            isArchived
-            isDisabled
-            createdAt
-            updatedAt
-            pushedAt
           }
         }
       }
-      rateLimit {
-        limit
-        remaining
-        resetAt
-        used
-      }
+      rateLimit { limit remaining resetAt used }
     }
     """
     
@@ -430,7 +406,7 @@ class GitHubRepositoryCrawler:
         self.current_query_index = 0
         self.seen_repo_ids = set()  # Track seen repository IDs to avoid duplicates
         self.consecutive_empty_batches = 0  # Track consecutive empty batches
-        self.max_concurrent_requests = 5  # Maximum concurrent requests for speed
+        self.max_concurrent_requests = 8  # Increase concurrency for higher throughput
         
     async def crawl_repositories(
         self, 
