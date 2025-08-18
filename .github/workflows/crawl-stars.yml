@@ -16,10 +16,23 @@ on:
 jobs:
   crawl-stars:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
-    
     env:
-      DATABASE_URL: postgres://avnadmin:AVNS_L3b2cy8KY3DXnPGFtzm@crawler-cloud-392a.j.aivencloud.com:25618/defaultdb?sslmode=require
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PYTHONPATH: ${{ github.workspace }}
     
@@ -41,14 +54,14 @@ jobs:
         pip install -r requirements.txt
         echo "✅ Dependencies installed successfully"
     
-    - name: Verify Aiven PostgreSQL connection
+    - name: Verify PostgreSQL connection
       run: |
         python -c "
         import asyncpg
         import asyncio
         async def test():
             try:
-                print('🔗 Connecting to Aiven PostgreSQL...')
+                print('🔗 Connecting to PostgreSQL (service container)...')
                 conn = await asyncpg.connect('${{ env.DATABASE_URL }}')
                 version = await conn.fetchval('SELECT version()')
                 print(f'✅ Connected! PostgreSQL version: {version}')
@@ -58,28 +71,28 @@ jobs:
                 print(f'✅ Database time: {current_time}')
                 
                 await conn.close()
-                print('✅ Aiven PostgreSQL connection verified')
+                print('✅ PostgreSQL connection verified')
             except Exception as e:
                 print(f'❌ Connection failed: {e}')
                 raise
         asyncio.run(test())
         "
     
-    # Step 3: Setup Aiven PostgreSQL schema (creates all tables and schemas)
+    # Step 3: Setup PostgreSQL schema (creates all tables and schemas)
     - name: setup-postgres
       run: |
-        echo "🗄️ Setting up Aiven PostgreSQL database schema..."
+        echo "🗄️ Setting up PostgreSQL database schema..."
         python -c "
         import asyncio
         import asyncpg
         import sys
         from pathlib import Path
         
-        async def setup_aiven_database():
+        async def setup_database():
             try:
-                print('🔗 Connecting to Aiven PostgreSQL for schema setup...')
+                print('🔗 Connecting to PostgreSQL for schema setup...')
                 
-                # Connect directly to Aiven database
+                # Connect to service container database
                 conn = await asyncpg.connect('${{ env.DATABASE_URL }}')
                 
                 # Read and execute migration
@@ -94,15 +107,15 @@ jobs:
                     sys.exit(1)
                 
                 await conn.close()
-                print('✅ Aiven database setup completed successfully')
+                print('✅ Database setup completed successfully')
                 
             except Exception as e:
-                print(f'❌ Aiven database setup failed: {e}')
+                print(f'❌ Database setup failed: {e}')
                 import traceback
                 traceback.print_exc()
                 sys.exit(1)
         
-        asyncio.run(setup_aiven_database())
+        asyncio.run(setup_database())
         "
     
     - name: Verify database setup

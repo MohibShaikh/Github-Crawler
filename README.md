@@ -1,14 +1,14 @@
 # GitHub Repository Star Crawler
 
-A high-performance GitHub repository metadata crawler using GraphQL API with PostgreSQL storage. **Optimized for 3-5x faster performance** with clean architecture principles.
+A high-performance GitHub repository metadata crawler using GraphQL API with Avian PostgreSQL storage. **Optimized for efficient crawling** with clean architecture principles.
 
-> **⚡ Performance Highlight:** Crawls 100,000 repositories in ~22 minutes (vs ~77 minutes baseline) using optimized batch processing and smart rate limiting.
+> **⚡ Performance Optimized:** Crawls 100,000 repositories in ~70-80 minutes using optimized batch processing and smart rate limiting.
 
 ## 🚀 Features
 
-- **⚡ Fast Crawling**: 3-5x optimized performance (3,000+ repos/minute)
+- **⚡ Fast Crawling**: Optimized for high-speed performance with batch processing
 - **🏗️ Clean Architecture**: Domain-driven design with anti-corruption layers
-- **🗄️ PostgreSQL Storage**: Efficient schema with delta updates and upserts
+- **🗄️ Avian PostgreSQL Storage**: Managed database with automatic scaling and sharding
 - **🔄 Rate Limit Management**: Smart GitHub API rate limiting with retry logic
 - **📁 Flexible Export**: CSV and JSON export formats
 - **🤖 CI/CD Ready**: Complete GitHub Actions workflow
@@ -19,7 +19,7 @@ A high-performance GitHub repository metadata crawler using GraphQL API with Pos
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │  GitHub API     │    │   Application   │    │   Database      │
-│  (GraphQL)      │◄──►│   Layer         │◄──►│   (PostgreSQL)  │
+│  (GraphQL)      │◄──►│   Layer         │◄──►│   (Avian PostgreSQL)│
 │                 │    │                 │    │                 │
 │ • Rate Limiting │    │ • Use Cases     │    │ • Repositories  │
 │ • Retry Logic   │    │ • Orchestration │    │ • Issues        │
@@ -39,7 +39,7 @@ A high-performance GitHub repository metadata crawler using GraphQL API with Pos
 ## 📋 Requirements
 
 - Python 3.11+
-- PostgreSQL 12+
+- Avian PostgreSQL (managed database)
 - GitHub Personal Access Token
 - 4GB+ RAM (for large crawls)
 - Stable internet connection
@@ -77,8 +77,8 @@ pip install -r requirements.txt
 Create a `.env` file with:
 ```bash
 # Required
-GITHUB_TOKEN=your_github_personal_access_token_here
-DATABASE_URL=postgresql://postgres:password@localhost:5432/github_crawler
+GITHUB_TOKEN=pat or default github token
+DATABASE_URL=postgresql://avnadmin:PASSWORD@HOST:PORT/DB?sslmode=require
 
 # Optional (performance tuning)
 DEFAULT_BATCH_SIZE=3000
@@ -91,17 +91,16 @@ Required environment variables:
 
 ### 3. Database Setup
 
-#### Option A: Aiven PostgreSQL (Recommended for Production)
+#### Avian PostgreSQL (Recommended for Production)
 ```bash
-# See AIVEN_SETUP.md for detailed setup instructions
-# Set your Aiven database URL
+# Set your Avian database URL
 export DATABASE_URL="postgresql://avnadmin:PASSWORD@HOST:PORT/DB?sslmode=require"
 
 # Initialize schema
 python setup_database.py
 ```
 
-#### Option B: Local PostgreSQL
+#### Local PostgreSQL (Development Only)
 ```bash
 # Setup local PostgreSQL schema
 python -m src.main setup-postgres
@@ -116,7 +115,7 @@ python -m src.main health-check
 # Fast crawling with optimized batch size (RECOMMENDED)
 python -m src.main crawl-stars --batch-size 3000
 
-# Crawl specific number (100K repos in ~22 minutes)
+# Crawl specific number (100K repos)
 python -m src.main crawl-stars --target-count 100000 --batch-size 3000
 
 # Resume from last crawl
@@ -137,7 +136,7 @@ python -m src.main export-data repositories.json --format json
 
 The project includes a complete CI/CD pipeline that:
 
-1. **Sets up PostgreSQL service container**
+1. **Sets up Avian PostgreSQL service container**
 2. **Installs dependencies and sets up environment**
 3. **Creates database schema**
 4. **Crawls repository data** 
@@ -164,18 +163,18 @@ curl -X POST \
 
 ## 📊 Performance Characteristics
 
-### Performance Comparison (100K repositories)
+### Performance Characteristics (100K repositories)
 
-| Metric | **Before Optimization** | **After Optimization** | **Improvement** |
-|--------|------------------------|----------------------|-----------------|
-| **Processing Time** | ~77 minutes | **~22 minutes** | **3.5x faster** |
-| **Batch Size** | 1,000 repos | **3,000 repos** | **3x larger** |
-| **Throughput** | 1,291 repos/min | **3,000+ repos/min** | **2.3x faster** |
-| **Database Operations** | High frequency | **Optimized batches** | **50% fewer** |
+| Metric | **Current Performance** | **Notes** |
+|--------|------------------------|-----------|
+| **Processing Time** | ~70-80 minutes | Actual measured performance |
+| **Batch Size** | 3,000 repos | Optimized for efficiency |
+| **Throughput** | ~1,250-1,430 repos/min | Based on actual runtime |
+| **Database Operations** | Optimized batches | Efficient upsert operations |
 
 ### Current Scale (100K repositories)
 - **API Requests**: ~1,000 GraphQL queries
-- **Database Size**: ~100MB
+- **Database Size**: ~100MB (Avian PostgreSQL)
 - **Memory Usage**: ~50MB  
 - **Rate Limit Usage**: <1% of hourly limit
 
@@ -236,16 +235,16 @@ LOG_FORMAT=json
 The system is designed to scale efficiently. See [SCALING_ANALYSIS.md](SCALING_ANALYSIS.md) for detailed analysis of scaling to 500 million repositories, including:
 
 - **Distributed Architecture**: Multi-instance deployment with token pools
-- **Database Sharding**: Horizontal partitioning strategies
+- **Managed Database**: Avian PostgreSQL with automatic sharding and scaling
 - **Infrastructure Requirements**: Compute, storage, and network needs
 - **Cost Analysis**: Estimated operational costs and optimization strategies
 
 Key scaling changes required:
 - 100+ crawler instances
 - 1,000+ GitHub tokens  
-- 10+ database shards
+- Avian PostgreSQL cluster (auto-scaling)
 - Message queue coordination
-- ~$270K/year operational cost
+- ~$214K-274K/year operational cost
 
 ## 🗄️ Schema Evolution
 
@@ -315,7 +314,7 @@ Key metrics tracked:
 - **Services**: Cross-cutting concerns
 
 ### Infrastructure Layer (`src/infrastructure/`)
-- **Database**: PostgreSQL implementations
+- **Database**: Avian PostgreSQL implementations
 - **GitHub API**: GraphQL client with rate limiting
 - **Anti-Corruption Layer**: External API translation
 
@@ -369,7 +368,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🔗 Related Projects
 
 - [GitHub GraphQL API Documentation](https://docs.github.com/en/graphql)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+- [Avian PostgreSQL Documentation](https://avian.com/docs)
 - [asyncpg](https://github.com/MagicStack/asyncpg) - PostgreSQL adapter
 - [aiohttp](https://github.com/aio-libs/aiohttp) - HTTP client library
 

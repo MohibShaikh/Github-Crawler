@@ -9,7 +9,6 @@ This document outlines the architectural changes and considerations required to 
 ### Current Constraints
 - **Single Instance**: Runs on a single machine/container
 - **Sequential Processing**: Primarily sequential with some batching
-- **Single Database**: One PostgreSQL instance
 - **Rate Limits**: GitHub's 5,000 requests/hour per token
 - **Memory Usage**: ~50MB for 100K repositories
 - **Processing Time**: ~2-4 hours for 100K repositories
@@ -42,7 +41,7 @@ This document outlines the architectural changes and considerations required to 
                                   │
                     ┌─────────────▼─────────────┐
                     │   Database Cluster        │
-                    │  (Sharded PostgreSQL)     │
+                    │  (Sharded Avian PostgreSQL)│
                     └───────────────────────────┘
 ```
 
@@ -95,20 +94,20 @@ class DistributedCrawlCoordinator:
 
 **3. Database Sharding Strategy**
 ```python
-class ShardedRepositoryRepository:
-    def __init__(self, shard_pools: Dict[int, DatabasePool]):
-        self.shard_pools = shard_pools
-        self.shard_count = len(shard_pools)
-    
-    def get_shard_id(self, repo_id: int) -> int:
-        """Determine shard based on repository ID."""
-        return repo_id % self.shard_count
+class AvianRepositoryRepository:
+    def __init__(self, avian_connection_string: str):
+        self.connection_string = avian_connection_string
+        # Avian handles sharding automatically - no manual shard management
     
     async def save(self, repository: Repository) -> Repository:
-        shard_id = self.get_shard_id(repository.repo_id)
-        pool = self.shard_pools[shard_id]
-        # Use shard-specific repository implementation
-        return await self._save_to_shard(pool, repository)
+        # Avian automatically routes to appropriate shard
+        # No need for manual shard selection
+        return await self._save_to_avian(repository)
+    
+    async def get_by_repo_id(self, repo_id: int) -> Optional[Repository]:
+        # Avian automatically queries across all shards
+        # No need for manual shard routing
+        return await self._get_from_avian(repo_id)
 ```
 
 ### 2. GitHub API Rate Limit Management
@@ -158,36 +157,44 @@ query GetRepositoriesBatch($cursor: String, $first: Int!) {
 
 ### 3. Database Architecture
 
+#### Avian PostgreSQL Advantages
+- **Managed Sharding**: Avian handles shard distribution automatically
+- **Auto-scaling**: Shards scale up/down based on load
+- **Global Distribution**: Multi-region deployment for lower latency
+- **Built-in Replication**: Automatic read replicas and failover
+- **Connection Pooling**: Managed connection pools at the database level
+
 #### Sharding Strategy
 ```sql
--- Shard by repository ID modulo
--- Shard 0: repo_id % 100 = 0-9
--- Shard 1: repo_id % 100 = 10-19
--- ...
--- Shard 9: repo_id % 100 = 90-99
+-- Avian PostgreSQL handles sharding automatically
+-- No manual shard management required
 
--- Each shard contains:
-CREATE TABLE repositories_shard_0 (
-    LIKE repositories INCLUDING ALL
+-- Tables are automatically distributed across shards
+CREATE TABLE repositories (
+    id SERIAL PRIMARY KEY,
+    repo_id BIGINT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    -- ... other fields
 );
 
--- Partition by date for time-series data
-CREATE TABLE crawl_jobs_2024_01 PARTITION OF crawl_jobs
-FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+-- Avian automatically shards based on repo_id
+-- No need for manual shard creation or routing
 ```
 
 #### Database Sizing Estimates
 - **500M repositories × 1KB/record = 500GB**
 - **Indexes: ~200GB additional**
-- **Total per shard (10 shards): ~70GB**
-- **Recommended**: PostgreSQL cluster with 10 primary shards + replicas
+- **Total storage: ~700GB**
+- **Avian PostgreSQL**: Automatically distributes across available shards
+- **No manual shard management**: Avian handles distribution and scaling
 
 #### Read Replicas Strategy
 ```
-Primary Shard 0 ─── Read Replica 0A ─── Read Replica 0B
-Primary Shard 1 ─── Read Replica 1A ─── Read Replica 1B
-...
-Primary Shard 9 ─── Read Replica 9A ─── Read Replica 9B
+Avian PostgreSQL Cluster
+├── Primary Nodes (Auto-distributed)
+├── Read Replicas (Auto-created based on load)
+├── Failover Nodes (Automatic failover)
+└── Global Distribution (Multi-region)
 ```
 
 ### 4. Infrastructure Requirements
@@ -303,18 +310,19 @@ class CrawlerMetrics:
 
 #### Infrastructure Costs (Monthly)
 - **Compute**: 100 instances × $100/month = $10,000
-- **Database**: 10 shards × $500/month = $5,000  
-- **Storage**: 40TB × $50/TB = $2,000
-- **Network**: $1,000
+- **Database**: Avian PostgreSQL cluster (auto-scaling) = $3,000-8,000
+- **Storage**: Included with Avian PostgreSQL = $0
+- **Network**: $500 (reduced due to managed database)
 - **GitHub Tokens**: 1,000 tokens × $4 = $4,000
-- **Monitoring/Logging**: $500
-- **Total**: ~$22,500/month
+- **Monitoring/Logging**: $300 (reduced due to managed database)
+- **Total**: ~$17,800-22,800/month
 
 #### Cost Optimization Strategies
-1. **Spot Instances**: Use AWS Spot for 50-70% cost reduction
-2. **Token Sharing**: Share tokens across multiple projects
-3. **Tiered Storage**: Move old data to cheaper storage tiers
-4. **Reserved Instances**: Commit to 1-3 year terms for discounts
+1. **Avian PostgreSQL Auto-scaling**: Pay only for what you use
+2. **Spot Instances**: Use AWS Spot for 50-70% cost reduction
+3. **Token Sharing**: Share tokens across multiple projects
+4. **Avian Storage Optimization**: Automatic data tiering and compression
+5. **Reserved Instances**: Commit to 1-3 year terms for discounts
 
 ### 8. Deployment Strategy
 
@@ -367,10 +375,10 @@ Resources:
 Scaling from 100K to 500M repositories requires fundamental architectural changes:
 
 1. **Distributed Processing**: 100+ crawler instances with token pools
-2. **Database Sharding**: 10+ PostgreSQL shards with read replicas  
+2. **Managed Database**: Avian PostgreSQL with automatic sharding and scaling
 3. **Rate Limit Management**: 1000+ GitHub tokens with intelligent routing
 4. **Infrastructure**: Cloud-native with auto-scaling capabilities
 5. **Monitoring**: Comprehensive observability and alerting
-6. **Cost Management**: ~$270K/year operational costs
+6. **Cost Management**: ~$214K-274K/year operational costs (reduced with Avian)
 
 The key to success is gradual scaling with thorough testing at each phase, robust error handling, and comprehensive monitoring to identify bottlenecks early.

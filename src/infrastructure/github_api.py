@@ -103,9 +103,32 @@ class GitHubGraphQLClient:
             data = await response.json()
             
             if "errors" in data:
-                error_msg = "; ".join([error.get("message", "") for error in data["errors"]])
-                logger.error("GraphQL errors", errors=data["errors"])
-                raise GitHubAPIError(f"GraphQL errors: {error_msg}")
+                # Check if errors are due to access restrictions on specific repositories
+                access_restricted_errors = []
+                other_errors = []
+                
+                for error in data["errors"]:
+                    error_msg = error.get("message", "")
+                    if any(keyword in error_msg.lower() for keyword in [
+                        "ip allow list", "not permitted", "access this resource", 
+                        "saml_failure", "organization has restricted access"
+                    ]):
+                        access_restricted_errors.append(error)
+                    else:
+                        other_errors.append(error)
+                
+                # If all errors are access restrictions, we can continue with partial data
+                if access_restricted_errors and not other_errors:
+                    logger.warning("Access restricted repositories found, continuing with available data", 
+                                 restricted_count=len(access_restricted_errors))
+                    # Return partial data without the restricted repositories
+                    return data
+                
+                # If there are other errors, raise exception
+                if other_errors:
+                    error_msg = "; ".join([error.get("message", "") for error in other_errors])
+                    logger.error("GraphQL errors", errors=other_errors)
+                    raise GitHubAPIError(f"GraphQL errors: {error_msg}")
             
             return data
     
@@ -216,9 +239,9 @@ class GitHubRepositoryCrawler:
             
             # More granular star ranges for better coverage
             "is:public stars:>10000",
-            "is:public stars:8000..9999",
-            "is:public stars:6000..7999",
-            "is:public stars:4000..5999",
+            "is:public stars:7000..7999",
+            "is:public stars:6000..6999",
+            "is:public stars:5000..5999",
             "is:public stars:2000..4999",
             "is:public stars:1000..1999",
             "is:public stars:750..999",
@@ -483,6 +506,10 @@ class GitHubRepositoryCrawler:
                 repositories = []
                 for repo_data in repositories_data:
                     try:
+                        # Skip null repositories (access restricted)
+                        if repo_data is None:
+                            continue
+                            
                         repo_id = repo_data.get("databaseId")
                         
                         # Skip if we've already seen this repository
@@ -496,7 +523,7 @@ class GitHubRepositoryCrawler:
                             self.seen_repo_ids.add(repo_id)
                     except Exception as e:
                         logger.warning("Failed to convert repository", 
-                                     repo_name=repo_data.get("nameWithOwner", "unknown"),
+                                     repo_name=repo_data.get("nameWithOwner", "unknown") if repo_data else "null",
                                      error=str(e))
                         continue
                 
@@ -598,11 +625,29 @@ class GitHubRepositoryCrawler:
                 continue
                 
             except Exception as e:
-                logger.error("Error during repository crawl", 
-                           error=str(e), 
-                           cursor=cursor,
-                           total_fetched=total_fetched)
-                raise
+                # Check if it's an access restriction error
+                if any(keyword in str(e).lower() for keyword in [
+                    "ip allow list", "not permitted", "access this resource", 
+                    "saml_failure", "organization has restricted access"
+                ]):
+                    logger.warning("Access restriction encountered, skipping to next query", 
+                                 error=str(e),
+                                 query=self.search_queries[self.current_query_index])
+                    # Move to next query
+                    self.current_query_index += 1
+                    if self.current_query_index < len(self.search_queries):
+                        cursor = None  # Reset cursor for new query
+                        continue
+                    else:
+                        logger.error("All queries exhausted due to access restrictions", 
+                                   total_fetched=total_fetched)
+                        break
+                else:
+                    logger.error("Error during repository crawl", 
+                               error=str(e), 
+                               cursor=cursor,
+                               total_fetched=total_fetched)
+                    raise
         
         logger.info("Repository crawl completed", 
                    total_fetched=total_fetched,
