@@ -2,7 +2,7 @@
 
 A high-performance GitHub repository metadata crawler using GraphQL API with Avian PostgreSQL storage. **Optimized for efficient crawling** with clean architecture principles.
 
-> **⚡ Performance Optimized:** Crawls 100,000 repositories in ~70-80 minutes using optimized batch processing and smart rate limiting.
+> **⚡ Performance Optimized:** Crawls 100,000 repositories in ~66 minutes (latest run) using optimized batch processing and smart rate limiting.
 
 ## 🚀 Features
 
@@ -167,9 +167,9 @@ curl -X POST \
 
 | Metric | **Current Performance** | **Notes** |
 |--------|------------------------|-----------|
-| **Processing Time** | ~70-80 minutes | Actual measured performance |
+| **Processing Time** | ~66 minutes | Latest CI run duration |
 | **Batch Size** | 3,000 repos | Optimized for efficiency |
-| **Throughput** | ~1,250-1,430 repos/min | Based on actual runtime |
+| **Throughput** | ~1,500 repos/min | Based on latest runtime |
 | **Database Operations** | Optimized batches | Efficient upsert operations |
 
 ### Current Scale (100K repositories)

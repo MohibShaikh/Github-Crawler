@@ -178,51 +178,94 @@ class PostgreSQLRepositoryRepository(RepositoryRepositoryInterface):
             
         connection = await self.db_pool.acquire()
         try:
-            # Process in chunks for very large batches
-            chunk_size = 5000  # Much larger chunks for maximum speed
-            for i in range(0, len(repositories), chunk_size):
-                chunk = repositories[i:i + chunk_size]
-                
-                # Prepare data for batch insert
-                data = [
-                    (
-                        repo.repo_id, repo.name, repo.full_name, repo.owner_login,
-                        repo.owner_type.value, repo.stars_count, repo.forks_count,
-                        repo.watchers_count, repo.language, repo.description,
-                        repo.is_private, repo.is_fork, repo.is_archived, repo.is_disabled,
-                        repo.created_at, repo.updated_at, repo.pushed_at,
-                        repo.crawled_at or datetime.utcnow(), datetime.utcnow()
-                    )
-                    for repo in chunk
-                ]
-                
-                await connection.executemany("""
-                    INSERT INTO repositories (
-                        repo_id, name, full_name, owner_login, owner_type,
-                        stars_count, forks_count, watchers_count, language, description,
-                        is_private, is_fork, is_archived, is_disabled,
-                        created_at, updated_at, pushed_at, crawled_at, last_modified
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-                    ON CONFLICT (repo_id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        full_name = EXCLUDED.full_name,
-                        owner_login = EXCLUDED.owner_login,
-                        owner_type = EXCLUDED.owner_type,
-                        stars_count = EXCLUDED.stars_count,
-                        forks_count = EXCLUDED.forks_count,
-                        watchers_count = EXCLUDED.watchers_count,
-                        language = EXCLUDED.language,
-                        description = EXCLUDED.description,
-                        is_private = EXCLUDED.is_private,
-                        is_fork = EXCLUDED.is_fork,
-                        is_archived = EXCLUDED.is_archived,
-                        is_disabled = EXCLUDED.is_disabled,
-                        updated_at = EXCLUDED.updated_at,
-                        pushed_at = EXCLUDED.pushed_at,
-                        crawled_at = EXCLUDED.crawled_at,
-                        last_modified = NOW()
-                """, data)
-            
+            # Use staging table + COPY for much faster batch upsert
+            await connection.execute("""
+                CREATE TEMP TABLE IF NOT EXISTS repositories_staging (
+                    repo_id BIGINT,
+                    name TEXT,
+                    full_name TEXT,
+                    owner_login TEXT,
+                    owner_type TEXT,
+                    stars_count INTEGER,
+                    forks_count INTEGER,
+                    watchers_count INTEGER,
+                    language TEXT,
+                    description TEXT,
+                    is_private BOOLEAN,
+                    is_fork BOOLEAN,
+                    is_archived BOOLEAN,
+                    is_disabled BOOLEAN,
+                    created_at TIMESTAMPTZ,
+                    updated_at TIMESTAMPTZ,
+                    pushed_at TIMESTAMPTZ,
+                    crawled_at TIMESTAMPTZ,
+                    last_modified TIMESTAMPTZ
+                ) ON COMMIT DROP;
+            """)
+
+            # Build CSV-like payload in-memory for COPY
+            rows = []
+            now = datetime.utcnow()
+            for repo in repositories:
+                rows.append('\t'.join([
+                    str(repo.repo_id),
+                    repo.name or '',
+                    repo.full_name or '',
+                    repo.owner_login or '',
+                    repo.owner_type.value,
+                    str(repo.stars_count),
+                    str(repo.forks_count or 0),
+                    str(repo.watchers_count or 0),
+                    repo.language or '',
+                    repo.description.replace('\t',' ').replace('\n',' ') if repo.description else '',
+                    't' if repo.is_private else 'f',
+                    't' if repo.is_fork else 'f',
+                    't' if repo.is_archived else 'f',
+                    't' if repo.is_disabled else 'f',
+                    (repo.created_at or now).isoformat(),
+                    (repo.updated_at or now).isoformat(),
+                    (repo.pushed_at or now).isoformat() if repo.pushed_at else '',
+                    (repo.crawled_at or now).isoformat(),
+                    now.isoformat()
+                ]))
+
+            copy_payload = ('\n'.join(rows)).encode('utf-8')
+            await connection.copy_to_table('repositories_staging', source=copy_payload, format='csv', delimiter='\t', header=False)
+
+            # Merge from staging into main table
+            await connection.execute("""
+                INSERT INTO repositories (
+                    repo_id, name, full_name, owner_login, owner_type,
+                    stars_count, forks_count, watchers_count, language, description,
+                    is_private, is_fork, is_archived, is_disabled,
+                    created_at, updated_at, pushed_at, crawled_at, last_modified
+                )
+                SELECT 
+                    repo_id, name, full_name, owner_login, owner_type,
+                    stars_count, forks_count, watchers_count, language, description,
+                    is_private, is_fork, is_archived, is_disabled,
+                    created_at, updated_at, pushed_at, crawled_at, last_modified
+                FROM repositories_staging
+                ON CONFLICT (repo_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    full_name = EXCLUDED.full_name,
+                    owner_login = EXCLUDED.owner_login,
+                    owner_type = EXCLUDED.owner_type,
+                    stars_count = EXCLUDED.stars_count,
+                    forks_count = EXCLUDED.forks_count,
+                    watchers_count = EXCLUDED.watchers_count,
+                    language = EXCLUDED.language,
+                    description = EXCLUDED.description,
+                    is_private = EXCLUDED.is_private,
+                    is_fork = EXCLUDED.is_fork,
+                    is_archived = EXCLUDED.is_archived,
+                    is_disabled = EXCLUDED.is_disabled,
+                    updated_at = EXCLUDED.updated_at,
+                    pushed_at = EXCLUDED.pushed_at,
+                    crawled_at = EXCLUDED.crawled_at,
+                    last_modified = NOW();
+            """)
+
             return repositories
         finally:
             await self.db_pool.release(connection)

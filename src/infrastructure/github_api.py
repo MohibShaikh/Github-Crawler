@@ -41,11 +41,19 @@ class GitHubGraphQLClient:
         
     async def __aenter__(self):
         if self.session is None:
+            connector = aiohttp.TCPConnector(
+                limit=50,
+                ttl_dns_cache=300,
+                enable_cleanup_closed=True
+            )
             self.session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=60),
+                connector=connector,
                 headers={
                     "Authorization": f"Bearer {self.token}",
-                    "User-Agent": "GitHub-Star-Crawler/1.0"
+                    "User-Agent": "GitHub-Star-Crawler/1.0",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Connection": "keep-alive"
                 }
             )
         return self
