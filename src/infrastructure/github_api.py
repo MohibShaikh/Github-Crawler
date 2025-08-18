@@ -181,10 +181,7 @@ class GitHubRepositoryCrawler:
     query($cursor: String, $first: Int!, $query: String!) {
       search(query: $query, type: REPOSITORY, first: $first, after: $cursor) {
         repositoryCount
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
+        pageInfo { hasNextPage endCursor }
         nodes {
           ... on Repository {
             databaseId
@@ -192,6 +189,15 @@ class GitHubRepositoryCrawler:
             nameWithOwner
             owner { login __typename }
             stargazerCount
+            description
+            isPrivate
+            isFork
+            isArchived
+            isDisabled
+            primaryLanguage { name }
+            createdAt
+            updatedAt
+            pushedAt
           }
         }
       }
@@ -400,6 +406,48 @@ class GitHubRepositoryCrawler:
             "is:public \"tutorial\" stars:>5",
             "is:public \"guide\" stars:>5",
             
+            # High-yield slices for fast coverage
+            "is:public archived:false fork:false stars:>50000",
+            "is:public archived:false fork:false stars:30000..49999",
+            "is:public archived:false fork:false stars:20000..29999",
+            "is:public archived:false fork:false stars:10000..19999 pushed:>2024-01-01",
+
+            # Star bins × recent activity (broad)
+            "is:public archived:false fork:false stars:1000..1999 pushed:>2024-01-01",
+            "is:public archived:false fork:false stars:500..999 pushed:>2024-04-01",
+            "is:public archived:false fork:false stars:200..499 pushed:>2024-07-01",
+            "is:public archived:false fork:false stars:100..199 pushed:>2024-10-01",
+
+            # Language slices × star bins × recent
+            "is:public archived:false fork:false language:javascript stars:200..499 pushed:>2024-06-01",
+            "is:public archived:false fork:false language:python stars:200..499 pushed:>2024-06-01",
+            "is:public archived:false fork:false language:java stars:200..499 pushed:>2024-06-01",
+            "is:public archived:false fork:false language:go stars:200..499 pushed:>2024-06-01",
+            "is:public archived:false fork:false language:rust stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false language:typescript stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false language:php stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false language:ruby stars:100..299 pushed:>2024-06-01",
+
+            # Topic slices × star bins × recent
+            "is:public archived:false fork:false topic:ai stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false topic:machine-learning stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false topic:data-science stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false topic:kubernetes stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false topic:docker stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false topic:react stars:100..299 pushed:>2024-06-01",
+            "is:public archived:false fork:false topic:terraform stars:50..149 pushed:>2024-06-01",
+            "is:public archived:false fork:false topic:fastapi stars:50..149 pushed:>2024-06-01",
+
+            # License slices × star bins
+            "is:public archived:false fork:false license:mit stars:200..499",
+            "is:public archived:false fork:false license:apache-2.0 stars:200..499",
+            "is:public archived:false fork:false license:gpl-3.0 stars:200..499",
+
+            # Big/popular repos
+            "is:public archived:false fork:false size:>20000 stars:>50 pushed:>2024-01-01",
+            "is:public archived:false fork:false forks:>2000 stars:>50 pushed:>2024-01-01",
+            "is:public archived:false fork:false watchers:>1000 stars:>50 pushed:>2024-01-01",
+
             # Fallback: any public repo with stars
             "is:public stars:>0"
         ]
@@ -648,6 +696,12 @@ class GitHubRepositoryCrawler:
         pushed_at = datetime.fromisoformat(
             repo_data["pushedAt"].replace("Z", "+00:00")
         ) if repo_data.get("pushedAt") else None
+
+        # Ensure NOT NULL constraints are satisfied
+        if created_at is None:
+            created_at = updated_at or pushed_at or datetime.utcnow()
+        if updated_at is None:
+            updated_at = pushed_at or created_at or datetime.utcnow()
         
         # Extract language
         language = None
